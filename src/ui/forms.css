@@ -1,0 +1,39 @@
+.ppb-form { display: grid; gap: 1rem; color: #173f34; }
+.ppb-form header h2 { margin: 0; font-family: Georgia, serif; }
+.ppb-form .eyebrow { margin: 0 0 .25rem; color: #8a6b1f; font-size: .75rem; font-weight: 800; letter-spacing: .12em; }
+.ppb-form label { display: grid; gap: .4rem; font-weight: 700; }
+.ppb-form input, .ppb-form select, .ppb-form textarea { width: 100%; min-height: 44px; box-sizing: border-box; border: 1px solid #c9d8d1; border-radius: 12px; padding: .75rem; background: #fffef8; color: #173f34; font: inherit; }
+.ppb-form small, .form-note { color: #60746c; font-weight: 400; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.form-notice { margin: 0; padding: .9rem; border-left: 4px solid #d2a93b; border-radius: 10px; background: #fff8df; }
+.payment-math { display: grid; gap: .55rem; margin: 0; padding: 1rem; border-radius: 14px; background: #f3f7f4; }
+.payment-math div { display: flex; justify-content: space-between; gap: 1rem; }
+.payment-math dd { margin: 0; font-weight: 800; }
+.payment-math .total { padding-top: .65rem; border-top: 1px solid #c9d8d1; }
+.payment-status { margin: 0; padding: .8rem; border-radius: 10px; font-weight: 700; }
+.payment-status.paid { background: #e6f5ec; color: #1d6c42; }
+.payment-status.remaining, .form-error { background: #fff0ed; color: #a33a2b; }
+.ppb-form button { min-height: 46px; border-radius: 12px; padding: .75rem 1rem; font-weight: 800; cursor: pointer; }
+.ppb-form .primary { border: 0; background: #285f4b; color: #fff; }
+.ppb-form .secondary { border: 1px solid #285f4b; background: transparent; color: #285f4b; }
+@media (max-width: 560px) { .form-grid { grid-template-columns: 1fr; } }
+.finance-dashboard { max-width: 1120px; margin: auto; padding: 1.25rem; color: #173f34; }
+.dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.dashboard-heading h1, .finance-dashboard h2 { font-family: Georgia, serif; }
+.summary-grid, .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.summary-card, .dashboard-card { display: grid; gap: .45rem; padding: 1rem; border: 1px solid #d7e1dc; border-radius: 18px; background: #fffef8; box-shadow: 0 8px 24px rgba(30, 69, 56, .07); }
+.summary-card strong, .dashboard-card > strong { font-size: 1.35rem; }
+.dashboard-card p, .dashboard-card h3 { margin: 0; }
+.dashboard-card small { color: #60746c; }
+.card-actions { display: flex; gap: .6rem; margin-top: .6rem; }
+.card-actions button { flex: 1; min-height: 42px; border: 1px solid #285f4b; border-radius: 11px; background: transparent; color: #285f4b; font-weight: 800; }
+.card-actions .primary { background: #285f4b; color: #fff; }
+.dashboard-modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; overflow-y: auto; padding: 1rem; background: rgba(15, 40, 32, .62); }
+.dashboard-modal > .ppb-form { width: min(100%, 520px); max-height: calc(100vh - 2rem); overflow-y: auto; padding: 1.25rem; border-radius: 20px; background: #fffef8; }
+.dashboard-state { min-height: 60vh; display: grid; place-items: center; color: #285f4b; }
+.dashboard-toast { position: fixed; right: 1rem; bottom: 1rem; z-index: 30; max-width: 420px; padding: 1rem; border-radius: 12px; background: #fff0ed; color: #a33a2b; box-shadow: 0 12px 30px rgba(0,0,0,.18); }
+.diagnostic-panel { display: grid; gap: .45rem; margin: 1rem 0; padding: 1rem; border: 1px solid #d2a93b; border-radius: 14px; background: #fff8df; }
+.diagnostic-panel code { overflow-wrap: anywhere; }
+.card-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.demo-banner { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; padding: .9rem 1.25rem; background: #173f34; color: #fff; }
+.demo-banner strong { color: #f1ce69; }

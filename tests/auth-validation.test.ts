@@ -1,0 +1,1 @@
+import assert from"node:assert/strict";import test from"node:test";import{validateEmail,validatePassword}from"../src/auth/validation.ts";test("normalizes email",()=>assert.equal(validateEmail(" User@Example.COM "),"user@example.com"));test("rejects invalid credentials",()=>{assert.throws(()=>validateEmail("bad"));assert.throws(()=>validatePassword("short"))});
