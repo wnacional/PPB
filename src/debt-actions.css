@@ -1,0 +1,78 @@
+.debt-list article {
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+}
+
+.debt-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.action {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #ccd6d2;
+  background: white;
+  color: #23443b;
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-weight: 800;
+}
+
+.action.payment {
+  background: #174b3f;
+  color: white;
+  border-color: #174b3f;
+}
+
+.action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.form-summary,
+.form-note {
+  color: #60706a;
+  font-size: 13px;
+}
+
+.form-summary {
+  background: #f4f1e9;
+  padding: 12px;
+  border-radius: 11px;
+}
+
+.form-error {
+  background: #fae9e5;
+  color: #923d36;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+}
+
+textarea {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-top: 6px;
+  border: 1px solid #ccd6d2;
+  border-radius: 11px;
+  background: white;
+  resize: vertical;
+  font: inherit;
+}
+
+@media (max-width: 700px) {
+  .debt-list article {
+    grid-template-columns: 44px 1fr auto;
+  }
+
+  .debt-actions {
+    grid-column: 2 / 4;
+  }
+
+  .action {
+    flex: 1;
+    justify-content: center;
+  }
+}
