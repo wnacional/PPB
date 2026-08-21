@@ -57,17 +57,33 @@ function Auth() {
   return <main className="auth auth-page"><section className="auth-intro"><div className="brand-mark">₱</div><span className="eyebrow">PINOY POCKET BUDGET</span><h1>Ipon, gastos, at utang—organized in one private place.</h1><p>Track your income, daily expenses, and loan progress in Philippine pesos. Your account keeps your budget separate and protected.</p><ul><li>Private account and cloud backup</li><li>Income, expense, and loan tracking</li><li>Built for Filipino households</li></ul></section><section className="auth-card"><span className="eyebrow">{mode === 'signin' ? 'WELCOME BACK' : 'CREATE YOUR ACCOUNT'}</span><h2>{mode === 'signin' ? 'Sign in' : 'Start budgeting'}</h2><p>Use your email to access your private budget.</p>{!configured && <div className="notice">Add your Supabase publishable key to the deployment environment.</div>}<form onSubmit={mode === 'signin' ? login : e => { e.preventDefault(); void signup() }}><label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required /></label><label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" minLength={8} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required /></label><button className="primary">{mode === 'signin' ? 'Sign in' : 'Create free account'}</button></form><div className="auth-switch">{mode === 'signin' ? <><button onClick={forgotPassword}>Forgot password?</button><span>New here? <button onClick={() => { setMode('signup'); setMsg('') }}>Create account</button></span></> : <button onClick={() => { setMode('signin'); setMsg('') }}>← Back to sign in</button>}</div>{msg && <p className="message">{msg}</p>}<small>By continuing, you agree to the <a href="/terms">Terms of Service</a> and acknowledge the <a href="/privacy">Privacy Policy</a>. Need help? <a href="/help">Open the Help Center</a>.</small></section></main>
 }
 
-function AccountSettings({ session, onClose }: { session: Session; onClose(): void }) {
+function AccountSettings({ session, onClose, onRestartTutorial }: { session: Session; onClose(): void; onRestartTutorial(): void }) {
   const [enabled, setEnabled] = useState(true)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirmation, setConfirmation] = useState('')
   const [message, setMessage] = useState('')
+  const [email, setEmail] = useState(session.user.email || '')
+  const [avatarPath, setAvatarPath] = useState<string | null>(null)
+  const [avatarUrl, setAvatarUrl] = useState('')
+  const [profile, setProfile] = useState({ first_name: '', surname: '', mobile_number: '', house_unit: '', street_barangay: '', city_municipality: '', province: '', country: '', zip_code: '' })
+  const updateProfile = (key: keyof typeof profile, value: string) => setProfile(current => ({ ...current, [key]: value }))
 
   useEffect(() => {
-    void supabase.from('user_notification_settings').select('due_reports_enabled').eq('user_id', session.user.id).maybeSingle().then(({ data, error }) => {
-      if (error) setMessage(error.message)
-      else setEnabled(data?.due_reports_enabled ?? true)
+    void Promise.all([
+      supabase.from('user_notification_settings').select('due_reports_enabled').eq('user_id', session.user.id).maybeSingle(),
+      supabase.from('user_profiles').select('first_name,surname,mobile_number,house_unit,street_barangay,city_municipality,province,country,zip_code,avatar_path').eq('user_id', session.user.id).maybeSingle(),
+    ]).then(async ([notificationResult, profileResult]) => {
+      if (notificationResult.error || profileResult.error) setMessage(notificationResult.error?.message || profileResult.error?.message || '')
+      setEnabled(notificationResult.data?.due_reports_enabled ?? true)
+      if (profileResult.data) {
+        const { avatar_path, ...personal } = profileResult.data
+        setProfile(personal as typeof profile); setAvatarPath(avatar_path)
+        if (avatar_path) {
+          const { data } = await supabase.storage.from('profile-photos').createSignedUrl(avatar_path, 3600)
+          setAvatarUrl(data?.signedUrl || '')
+        }
+      }
       setLoaded(true)
     })
   }, [session.user.id])
@@ -77,6 +93,42 @@ function AccountSettings({ session, onClose }: { session: Session; onClose(): vo
     const { error } = await supabase.from('user_notification_settings').upsert({ user_id: session.user.id, due_reports_enabled: enabled, updated_at: new Date().toISOString() })
     setSaving(false)
     setMessage(error?.message || 'Notification settings saved.')
+  }
+
+  async function savePersonalInformation(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setMessage('')
+    if (email !== session.user.email) {
+      const { error: emailError } = await supabase.auth.updateUser({ email })
+      if (emailError) { setSaving(false); setMessage(emailError.message); return }
+    }
+    const { error } = await supabase.from('user_profiles').upsert({ user_id: session.user.id, ...profile, avatar_path: avatarPath, updated_at: new Date().toISOString() })
+    setSaving(false); setMessage(error?.message || (email !== session.user.email ? 'Personal information saved. Check both email inboxes to confirm the address change.' : 'Personal information saved.'))
+  }
+
+  async function uploadPhoto(file?: File) {
+    if (!file) return
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) { setMessage('Choose a JPG, PNG, or WebP image up to 5 MB.'); return }
+    setSaving(true); setMessage('')
+    const extension = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/png' ? 'png' : 'webp'
+    const path = `${session.user.id}/avatar.${extension}`
+    const { error } = await supabase.storage.from('profile-photos').upload(path, file, { upsert: true, contentType: file.type })
+    if (error) { setSaving(false); setMessage(error.message); return }
+    if (avatarPath && avatarPath !== path) await supabase.storage.from('profile-photos').remove([avatarPath])
+    const { error: profileError } = await supabase.from('user_profiles').upsert({ user_id: session.user.id, ...profile, avatar_path: path, updated_at: new Date().toISOString() })
+    const { data } = await supabase.storage.from('profile-photos').createSignedUrl(path, 3600)
+    setAvatarPath(path); setAvatarUrl(data?.signedUrl || ''); setSaving(false); setMessage(profileError?.message || 'Profile photo saved.')
+  }
+
+  async function removePhoto() {
+    if (!avatarPath) return
+    setSaving(true); const { error } = await supabase.storage.from('profile-photos').remove([avatarPath])
+    if (!error) await supabase.from('user_profiles').upsert({ user_id: session.user.id, ...profile, avatar_path: null, updated_at: new Date().toISOString() })
+    setAvatarPath(null); setAvatarUrl(''); setSaving(false); setMessage(error?.message || 'Profile photo removed.')
+  }
+
+  async function restartTutorial() {
+    await supabase.from('user_profiles').upsert({ user_id: session.user.id, ...profile, avatar_path: avatarPath, tutorial_completed_at: null, updated_at: new Date().toISOString() })
+    localStorage.removeItem('ppb-tutorial-seen'); onClose(); onRestartTutorial()
   }
 
   async function deleteAccount() {
@@ -92,7 +144,7 @@ function AccountSettings({ session, onClose }: { session: Session; onClose(): vo
     await supabase.auth.signOut()
   }
 
-  return <div className="settings-backdrop" onMouseDown={onClose}><section className="settings-panel" onMouseDown={event => event.stopPropagation()} aria-label="Account settings"><header><div><span className="eyebrow">YOUR ACCOUNT</span><h2>Account settings</h2></div><button className="plain-icon" onClick={onClose} aria-label="Close settings"><X /></button></header><div className="settings-section"><ShieldCheck /><div><h3>Profile & security</h3><p>Signed in as <strong>{session.user.email}</strong></p><button className="secondary settings-button" onClick={() => supabase.auth.signOut()}><LogOut /> Sign out</button></div></div><div className="settings-section"><Bell /><div><h3>Due-date emails</h3><p>Receive automated reports for upcoming and overdue loan and credit-card payments.</p><label className="toggle"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} disabled={!loaded || saving} /><span>{enabled ? 'Email reminders enabled' : 'Email reminders paused'}</span></label><button className="primary settings-button" onClick={saveNotifications} disabled={!loaded || saving}>{saving ? 'Saving…' : 'Save notifications'}</button></div></div><div className="settings-section"><HelpCircle /><div><h3>Help and policies</h3><div className="settings-links"><a href="/help">Help Center</a><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="mailto:support@pinoypocketbudget.app">Contact support</a></div></div></div><div className="settings-section danger"><Trash2 /><div><h3>Danger Zone</h3><p>Permanently delete your account, sign-in access, and associated app records. This cannot be undone.</p><label>Type DELETE to confirm<input value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label><button className="danger-button" disabled={confirmation !== 'DELETE' || saving} onClick={deleteAccount}>Delete account permanently</button></div></div>{message && <p className="message" role="status">{message}</p>}</section></div>
+  return <div className="settings-backdrop" onMouseDown={onClose}><section className="settings-panel profile-settings" onMouseDown={event => event.stopPropagation()} aria-label="Account settings"><header><h2>Account settings</h2><button className="plain-icon" onClick={onClose} aria-label="Close settings"><X /></button></header><section className="profile-photo-card"><div className="photo-row"><div className="profile-photo">{avatarUrl ? <img src={avatarUrl} alt="Profile" /> : <span>{email.slice(0,1).toUpperCase()}</span>}</div><div><h3>Profile photo</h3><p>JPG, PNG, or WebP · up to 5 MB</p></div></div><label className="photo-picker">Choose photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => void uploadPhoto(event.target.files?.[0])} disabled={saving} /></label>{avatarPath && <button className="remove-photo" onClick={() => void removePhoto()} disabled={saving}>Remove</button>}</section><section className="signed-in-card"><b>Signed in as</b><span>{session.user.email}</span></section><section className="email-report-card"><Bell /><div><h3>Email due reports</h3><p>Send a branded report to {session.user.email} 15 days before a due date and 3 days after it becomes overdue.</p></div><label className="toggle full-toggle"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} disabled={!loaded || saving} /><span>{enabled ? 'Enabled' : 'Paused'}</span></label><button className="primary" onClick={saveNotifications} disabled={!loaded || saving}>Save email preference</button></section><form className="personal-card" onSubmit={savePersonalInformation}><header><div><h3>Personal information</h3><p>Optional — add only the details you want to keep.</p></div><span>PRIVATE</span></header><div className="personal-grid"><label>First name (optional)<input value={profile.first_name} onChange={event => updateProfile('first_name', event.target.value)} placeholder="First name" /></label><label>Surname (optional)<input value={profile.surname} onChange={event => updateProfile('surname', event.target.value)} placeholder="Surname" /></label></div><label>Email address<input type="email" value={email} onChange={event => setEmail(event.target.value)} required /><small>Changing this may require confirmation through your current and new email inboxes.</small></label><label>Mobile number (optional)<input value={profile.mobile_number} onChange={event => updateProfile('mobile_number', event.target.value)} placeholder="e.g. +63 917 123 4567" /></label><div className="address-heading"><b>Address</b><span>All fields optional</span></div><label>House or unit number<input value={profile.house_unit} onChange={event => updateProfile('house_unit', event.target.value)} placeholder="e.g. 123 or Unit 4B" /></label><label>Street / barangay<input value={profile.street_barangay} onChange={event => updateProfile('street_barangay', event.target.value)} placeholder="Street and barangay" /></label><label>City or municipality<input value={profile.city_municipality} onChange={event => updateProfile('city_municipality', event.target.value)} placeholder="City or municipality" /></label><div className="personal-grid"><label>Province<input value={profile.province} onChange={event => updateProfile('province', event.target.value)} placeholder="Province" /></label><label>Country<input value={profile.country} onChange={event => updateProfile('country', event.target.value)} placeholder="e.g. Philippines" /></label></div><label>ZIP code<input value={profile.zip_code} onChange={event => updateProfile('zip_code', event.target.value)} placeholder="ZIP code" /></label><button className="workspace-primary" disabled={saving}>{saving ? 'Saving…' : 'Save personal information'}</button></form><nav className="settings-menu"><button>Refer a friend <span>›</span></button><button onClick={() => void restartTutorial()}>Restart getting-started tutorial <span>›</span></button><a href="/help">Help Center <span>›</span></a><a href="/privacy">Privacy Policy <span>›</span></a><a href="/terms">Terms of Service <span>›</span></a><a href="mailto:support@pinoypocketbudget.app">Contact support <span>›</span></a></nav><button className="sign-out-button" onClick={() => supabase.auth.signOut()}><LogOut /> Sign out</button><section className="settings-danger"><span className="eyebrow">DANGER ZONE</span><h3>Delete your account</h3><p>This permanently removes your profile, transactions, loans, credit cards, and sign-in access.</p><label>Type DELETE to confirm<input value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label><button className="danger-button" disabled={confirmation !== 'DELETE' || saving} onClick={deleteAccount}><Trash2 /> Delete account</button></section>{message && <p className="message sticky-message" role="status">{message}</p>}</section></div>
 }
 
 function DebtActionForm({ session, debt, action, onClose, onSaved }: { session: Session; debt: Debt; action: DebtAction; onClose(): void; onSaved(): Promise<void> }) {
@@ -240,7 +292,7 @@ function LegacyDashboard({ session }: { session: Session }) {
     await load()
   }
 
-  return <div className="shell"><header><div><span className="eyebrow">MAGANDANG ARAW</span><h1>My Budget</h1></div><button className="icon" onClick={() => setSettingsOpen(true)} title="Account settings"><Settings /></button></header><main className="content">{loadError && <div className="notice" role="alert">Could not load all budget data: {loadError}</div>}<section className="balance"><span>Income balance</span><strong>{peso.format(totals.balance)}</strong><small>Income minus expenses</small></section><section className="metrics"><article><ArrowUpCircle /><span>Income</span><strong>{peso.format(totals.income)}</strong></article><article><ArrowDownCircle /><span>Expenses</span><strong>{peso.format(totals.expense)}</strong></article><article><WalletCards /><span>Total debt</span><strong>{peso.format(totals.debt)}</strong></article></section><section className="section-title"><div><span className="eyebrow">RECENT ACTIVITY</span><h2>Transactions</h2></div><button className="primary compact" onClick={() => setOpen(true)}><Plus /> Add</button></section><section className="list">{tx.length ? tx.map(item => <article key={item.id}><div className={`tx-icon ${item.kind}`}>{item.kind === 'income' ? <ArrowUpCircle /> : <ArrowDownCircle />}</div><div><strong>{item.note || item.category}</strong><span>{item.category} · {new Date(`${item.date}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b className={item.kind}>{item.kind === 'income' ? '+' : '−'}{peso.format(Number(item.amount))}</b></article>) : <div className="empty">No transactions yet. Add your first income or expense.</div>}</section><section className="section-title"><div><span className="eyebrow">WHAT YOU OWE</span><h2>Loans & credit cards</h2></div></section><section className="list debt-list">{debts.length ? debts.map(debt => <article key={`${debt.debtType}-${debt.id}`}><div className="tx-icon debt"><CreditCard /></div><div><strong>{debt.name}</strong><span>{debt.provider} · Due {new Date(`${debt.dueDate}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b>{peso.format(debt.balance)}</b><div className="debt-actions"><button className="action payment" onClick={() => setSelectedDebt({ debt, action: 'payment' })}>Pay</button><button className="action" onClick={() => setSelectedDebt({ debt, action: 'adjustment' })}><ReceiptText /> Adjust</button></div></article>) : <div className="empty">Your loan and credit-card overview will appear here.</div>}</section></main>{open && <div className="modal-backdrop" onMouseDown={() => setOpen(false)}><form className="modal" onSubmit={add} onMouseDown={e => e.stopPropagation()}><h2>Add transaction</h2><div className="segmented"><button type="button" className={kind === 'expense' ? 'active' : ''} onClick={() => setKind('expense')}>Expense</button><button type="button" className={kind === 'income' ? 'active' : ''} onClick={() => setKind('income')}>Income</button></div><label>Amount<input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} required /></label><label>Category<select value={category} onChange={e => setCategory(e.target.value)}>{['Food', 'Bills', 'Transport', 'Shopping', 'Salary', 'Freelance', 'Other'].map(item => <option key={item}>{item}</option>)}</select></label><label>Note<textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="Optional" /></label><button className="primary">Save transaction</button><button type="button" className="secondary" onClick={() => setOpen(false)}>Cancel</button></form></div>}{settingsOpen && <AccountSettings session={session} onClose={() => setSettingsOpen(false)} />}{selectedDebt && <DebtActionForm session={session} debt={selectedDebt.debt} action={selectedDebt.action} onClose={() => setSelectedDebt(null)} onSaved={load} />}</div>
+  return <div className="shell"><header><div><span className="eyebrow">MAGANDANG ARAW</span><h1>My Budget</h1></div><button className="icon" onClick={() => setSettingsOpen(true)} title="Account settings"><Settings /></button></header><main className="content">{loadError && <div className="notice" role="alert">Could not load all budget data: {loadError}</div>}<section className="balance"><span>Income balance</span><strong>{peso.format(totals.balance)}</strong><small>Income minus expenses</small></section><section className="metrics"><article><ArrowUpCircle /><span>Income</span><strong>{peso.format(totals.income)}</strong></article><article><ArrowDownCircle /><span>Expenses</span><strong>{peso.format(totals.expense)}</strong></article><article><WalletCards /><span>Total debt</span><strong>{peso.format(totals.debt)}</strong></article></section><section className="section-title"><div><span className="eyebrow">RECENT ACTIVITY</span><h2>Transactions</h2></div><button className="primary compact" onClick={() => setOpen(true)}><Plus /> Add</button></section><section className="list">{tx.length ? tx.map(item => <article key={item.id}><div className={`tx-icon ${item.kind}`}>{item.kind === 'income' ? <ArrowUpCircle /> : <ArrowDownCircle />}</div><div><strong>{item.note || item.category}</strong><span>{item.category} · {new Date(`${item.date}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b className={item.kind}>{item.kind === 'income' ? '+' : '−'}{peso.format(Number(item.amount))}</b></article>) : <div className="empty">No transactions yet. Add your first income or expense.</div>}</section><section className="section-title"><div><span className="eyebrow">WHAT YOU OWE</span><h2>Loans & credit cards</h2></div></section><section className="list debt-list">{debts.length ? debts.map(debt => <article key={`${debt.debtType}-${debt.id}`}><div className="tx-icon debt"><CreditCard /></div><div><strong>{debt.name}</strong><span>{debt.provider} · Due {new Date(`${debt.dueDate}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b>{peso.format(debt.balance)}</b><div className="debt-actions"><button className="action payment" onClick={() => setSelectedDebt({ debt, action: 'payment' })}>Pay</button><button className="action" onClick={() => setSelectedDebt({ debt, action: 'adjustment' })}><ReceiptText /> Adjust</button></div></article>) : <div className="empty">Your loan and credit-card overview will appear here.</div>}</section></main>{open && <div className="modal-backdrop" onMouseDown={() => setOpen(false)}><form className="modal" onSubmit={add} onMouseDown={e => e.stopPropagation()}><h2>Add transaction</h2><div className="segmented"><button type="button" className={kind === 'expense' ? 'active' : ''} onClick={() => setKind('expense')}>Expense</button><button type="button" className={kind === 'income' ? 'active' : ''} onClick={() => setKind('income')}>Income</button></div><label>Amount<input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} required /></label><label>Category<select value={category} onChange={e => setCategory(e.target.value)}>{['Food', 'Bills', 'Transport', 'Shopping', 'Salary', 'Freelance', 'Other'].map(item => <option key={item}>{item}</option>)}</select></label><label>Note<textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="Optional" /></label><button className="primary">Save transaction</button><button type="button" className="secondary" onClick={() => setOpen(false)}>Cancel</button></form></div>}{settingsOpen && <AccountSettings session={session} onClose={() => setSettingsOpen(false)} onRestartTutorial={() => undefined} />}{selectedDebt && <DebtActionForm session={session} debt={selectedDebt.debt} action={selectedDebt.action} onClose={() => setSelectedDebt(null)} onSaved={load} />}</div>
 }
 
 function Dashboard({ session }: { session: Session }) {
@@ -271,15 +323,20 @@ function Dashboard({ session }: { session: Session }) {
   const [debtTab, setDebtTab] = useState<DebtType>('loan')
 
   async function load() {
-    const [t, l, c, a] = await Promise.all([
+    const [t, l, c, a, p] = await Promise.all([
       supabase.from('transactions').select('id,kind,amount,category,note,date').order('date', { ascending: false }).limit(200),
       supabase.from('loans').select('id,name,lender,balance,monthly,due').order('created_at', { ascending: false }),
       supabase.from('credit_cards').select('id,name,issuer,current_balance,minimum_payment,due_day').order('created_at', { ascending: false }),
       supabase.from('budget_accounts').select('id,account_type,name,provider,available_balance,protected_balance,savings_balance,color_key').order('created_at', { ascending: true }),
+      supabase.from('user_profiles').select('tutorial_completed_at').eq('user_id', session.user.id).maybeSingle(),
     ])
-    const firstError = t.error || l.error || c.error || a.error
+    const firstError = t.error || l.error || c.error || a.error || p.error
     setLoadError(firstError?.message || '')
     setTx((t.data || []) as Tx[]); setLoans((l.data || []) as Loan[]); setCards((c.data || []) as Card[]); setAccounts((a.data || []) as BudgetAccount[])
+    if (p.data?.tutorial_completed_at) {
+      localStorage.setItem('ppb-tutorial-seen', 'true')
+      setTutorialOpen(false)
+    }
   }
   useEffect(() => { void load() }, [])
 
@@ -309,7 +366,12 @@ function Dashboard({ session }: { session: Session }) {
     if (error) return alert(error.message)
     setAmount(''); setNote(''); setSavingsAmount('0'); setDueDate(''); setTransactionOpen(false); await load()
   }
-  function completeTutorial() { localStorage.setItem('ppb-tutorial-seen', 'true'); setTutorialOpen(false); setPage('overview') }
+  async function completeTutorial() {
+    localStorage.setItem('ppb-tutorial-seen', 'true')
+    setTutorialOpen(false)
+    setPage('overview')
+    await supabase.from('user_profiles').upsert({ user_id: session.user.id, tutorial_completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+  }
   function go(next: WorkspacePage) { setPage(next); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const pageTitle = page === 'overview' ? 'Your money, made clear' : page === 'activity' ? 'Your activity' : page === 'debts' ? 'Debt tracker' : 'Pinoy Pocket Budget Premium'
   const nav = [{ id: 'overview' as const, label: 'Overview', icon: Home }, { id: 'activity' as const, label: 'Activity', icon: Menu }, { id: 'debts' as const, label: 'Debts', icon: CreditCard }, { id: 'premium' as const, label: 'Premium', icon: Star }]
@@ -332,7 +394,7 @@ function Dashboard({ session }: { session: Session }) {
   {debtForm && <AddDebtForm session={session} type={debtForm} onClose={() => setDebtForm(null)} onSaved={load} />}
   {accountOpen && <AddAccountForm session={session} onClose={() => setAccountOpen(false)} onSaved={load} />}
   {selectedDebt && <DebtActionForm session={session} debt={selectedDebt.debt} action={selectedDebt.action} onClose={() => setSelectedDebt(null)} onSaved={load} />}
-  {settingsOpen && <AccountSettings session={session} onClose={() => setSettingsOpen(false)} />}
+  {settingsOpen && <AccountSettings session={session} onClose={() => setSettingsOpen(false)} onRestartTutorial={() => setTutorialOpen(true)} />}
   {tutorialOpen && <GettingStarted onClose={completeTutorial} onFinish={completeTutorial} />}
   {remindersOpen && <div className="modal-backdrop" onMouseDown={() => setRemindersOpen(false)}><section className="modal reminder-modal" onMouseDown={e => e.stopPropagation()}><header><h2>Due date reminders</h2><button className="plain-icon" onClick={() => setRemindersOpen(false)}><X /></button></header><label>Show upcoming dues within<select defaultValue="7"><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option></select></label><div className="workspace-empty">You have no overdue or upcoming payments within the selected reminder period.</div><p>These reminders appear when you open Pinoy Pocket Budget. When email reports are enabled, reports are sent 15 days before a due date and again 3 days after an unpaid due date.</p></section></div>}
   </div>
