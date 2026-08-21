@@ -20,7 +20,9 @@ Deno.serve(async request=>{
  try{
   if(request.method!=='POST')return new Response(JSON.stringify({error:'Method not allowed'}),{status:405,headers:jsonHeaders})
   const expected=Deno.env.get('DUE_REPORT_CRON_SECRET')||''
-  const supplied=request.headers.get('authorization')?.replace(/^Bearer\s+/i,'')||''
+  const supplied=request.headers.get('x-cron-secret')
+   ||request.headers.get('authorization')?.replace(/^Bearer\s+/i,'')
+   ||''
   if(!expected||!secureEqual(supplied,expected))return new Response(JSON.stringify({error:'Unauthorized'}),{status:401,headers:jsonHeaders})
 
   const supabase=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false}})
