@@ -1,0 +1,19 @@
+{
+  "name": "pinoy-pocket-budget-recovered",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/serve.mjs dist",
+    "test": "node --test tests/*.test.ts",
+    "build:readable": "vite build"
+  },
+  "devDependencies": {"@vitejs/plugin-react":"latest","typescript":"latest","vite":"latest"}
+}
