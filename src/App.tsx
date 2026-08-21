@@ -6,6 +6,7 @@ import './debt-actions.css'
 import './settings.css'
 import './responsive.css'
 import './workspace.css'
+import './brand-alignment.css'
 import { PublicPages } from './PublicPages'
 
 type Kind = 'income' | 'expense'
@@ -57,7 +58,7 @@ function Auth() {
   return <main className="auth auth-page"><section className="auth-intro"><div className="brand-mark">₱</div><span className="eyebrow">PINOY POCKET BUDGET</span><h1>Ipon, gastos, at utang—organized in one private place.</h1><p>Track your income, daily expenses, and loan progress in Philippine pesos. Your account keeps your budget separate and protected.</p><ul><li>Private account and cloud backup</li><li>Income, expense, and loan tracking</li><li>Built for Filipino households</li></ul></section><section className="auth-card"><span className="eyebrow">{mode === 'signin' ? 'WELCOME BACK' : 'CREATE YOUR ACCOUNT'}</span><h2>{mode === 'signin' ? 'Sign in' : 'Start budgeting'}</h2><p>Use your email to access your private budget.</p>{!configured && <div className="notice">Add your Supabase publishable key to the deployment environment.</div>}<form onSubmit={mode === 'signin' ? login : e => { e.preventDefault(); void signup() }}><label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required /></label><label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" minLength={8} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required /></label><button className="primary">{mode === 'signin' ? 'Sign in' : 'Create free account'}</button></form><div className="auth-switch">{mode === 'signin' ? <><button onClick={forgotPassword}>Forgot password?</button><span>New here? <button onClick={() => { setMode('signup'); setMsg('') }}>Create account</button></span></> : <button onClick={() => { setMode('signin'); setMsg('') }}>← Back to sign in</button>}</div>{msg && <p className="message">{msg}</p>}<small>By continuing, you agree to the <a href="/terms">Terms of Service</a> and acknowledge the <a href="/privacy">Privacy Policy</a>. Need help? <a href="/help">Open the Help Center</a>.</small></section></main>
 }
 
-function AccountSettings({ session, onClose, onRestartTutorial }: { session: Session; onClose(): void; onRestartTutorial(): void }) {
+function AccountSettings({ session, onClose, onRestartTutorial, onAvatarChange = () => undefined }: { session: Session; onClose(): void; onRestartTutorial(): void; onAvatarChange?(url: string): void }) {
   const [enabled, setEnabled] = useState(true)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -116,14 +117,15 @@ function AccountSettings({ session, onClose, onRestartTutorial }: { session: Ses
     if (avatarPath && avatarPath !== path) await supabase.storage.from('profile-photos').remove([avatarPath])
     const { error: profileError } = await supabase.from('user_profiles').upsert({ user_id: session.user.id, ...profile, avatar_path: path, updated_at: new Date().toISOString() })
     const { data } = await supabase.storage.from('profile-photos').createSignedUrl(path, 3600)
-    setAvatarPath(path); setAvatarUrl(data?.signedUrl || ''); setSaving(false); setMessage(profileError?.message || 'Profile photo saved.')
+    const nextAvatarUrl = data?.signedUrl || ''
+    setAvatarPath(path); setAvatarUrl(nextAvatarUrl); onAvatarChange(nextAvatarUrl); setSaving(false); setMessage(profileError?.message || 'Profile photo saved.')
   }
 
   async function removePhoto() {
     if (!avatarPath) return
     setSaving(true); const { error } = await supabase.storage.from('profile-photos').remove([avatarPath])
     if (!error) await supabase.from('user_profiles').upsert({ user_id: session.user.id, ...profile, avatar_path: null, updated_at: new Date().toISOString() })
-    setAvatarPath(null); setAvatarUrl(''); setSaving(false); setMessage(error?.message || 'Profile photo removed.')
+    setAvatarPath(null); setAvatarUrl(''); onAvatarChange(''); setSaving(false); setMessage(error?.message || 'Profile photo removed.')
   }
 
   async function restartTutorial() {
@@ -249,6 +251,7 @@ function LegacyDashboard({ session }: { session: Session }) {
   const [loans, setLoans] = useState<Loan[]>([])
   const [cards, setCards] = useState<Card[]>([])
   const [accounts, setAccounts] = useState<BudgetAccount[]>([])
+  const [avatarUrl, setAvatarUrl] = useState('')
   const [open, setOpen] = useState(false)
   const [selectedDebt, setSelectedDebt] = useState<{ debt: Debt; action: DebtAction } | null>(null)
   const [kind, setKind] = useState<Kind>('expense')
@@ -301,6 +304,7 @@ function Dashboard({ session }: { session: Session }) {
   const [loans, setLoans] = useState<Loan[]>([])
   const [cards, setCards] = useState<Card[]>([])
   const [accounts, setAccounts] = useState<BudgetAccount[]>([])
+  const [avatarUrl, setAvatarUrl] = useState('')
   const [loadError, setLoadError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [remindersOpen, setRemindersOpen] = useState(false)
@@ -328,7 +332,7 @@ function Dashboard({ session }: { session: Session }) {
       supabase.from('loans').select('id,name,lender,balance,monthly,due').order('created_at', { ascending: false }),
       supabase.from('credit_cards').select('id,name,issuer,current_balance,minimum_payment,due_day').order('created_at', { ascending: false }),
       supabase.from('budget_accounts').select('id,account_type,name,provider,available_balance,protected_balance,savings_balance,color_key').order('created_at', { ascending: true }),
-      supabase.from('user_profiles').select('tutorial_completed_at').eq('user_id', session.user.id).maybeSingle(),
+      supabase.from('user_profiles').select('tutorial_completed_at,avatar_path').eq('user_id', session.user.id).maybeSingle(),
     ])
     const firstError = t.error || l.error || c.error || a.error || p.error
     setLoadError(firstError?.message || '')
@@ -337,6 +341,10 @@ function Dashboard({ session }: { session: Session }) {
       localStorage.setItem('ppb-tutorial-seen', 'true')
       setTutorialOpen(false)
     }
+    if (p.data?.avatar_path) {
+      const { data } = await supabase.storage.from('profile-photos').createSignedUrl(p.data.avatar_path, 3600)
+      setAvatarUrl(data?.signedUrl || '')
+    } else setAvatarUrl('')
   }
   useEffect(() => { void load() }, [])
 
@@ -379,7 +387,7 @@ function Dashboard({ session }: { session: Session }) {
   const launchBanner = <aside className="launch-banner"><div><strong>Public launch upgrade underway</strong><span>Account sign-up, secure cloud sync, and payments will activate after final service verification.</span></div><button onClick={() => go('premium')}>View plans</button></aside>
   const transactionList = (items: Tx[]) => <section className="workspace-card transaction-list">{items.length ? items.map(item => <article key={item.id}><div className={`tx-icon ${item.kind}`}>{item.kind === 'income' ? <ArrowDownCircle /> : <ArrowUpCircle />}</div><div><strong>{item.note || item.category}</strong><span>{item.category} · {new Date(`${item.date}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b className={item.kind}>{item.kind === 'income' ? '+' : '−'}{peso.format(Number(item.amount))}</b></article>) : <div className="workspace-empty">No transactions found.</div>}</section>
 
-  return <div className="workspace-shell"><aside className="workspace-sidebar"><div className="workspace-logo">₱</div>{nav.map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><Icon /><span>{item.label}</span></button> })}</aside><div className="workspace-body"><header className="workspace-header"><div><span className="eyebrow">PINOY POCKET BUDGET</span><h1>{pageTitle}</h1></div><div className="header-actions"><button className="refer-button"><Share2 /> <span>Refer a friend</span></button><button className="round-button" onClick={() => setRemindersOpen(true)} aria-label="Due date reminders"><Bell /></button><button className="avatar-button" onClick={() => setSettingsOpen(true)} aria-label="Account settings">{session.user.email?.slice(0, 1).toUpperCase()}</button></div></header><main className="workspace-main">{loadError && <div className="notice">Could not load all budget data: {loadError}</div>}{page !== 'premium' && launchBanner}
+  return <div className="workspace-shell"><aside className="workspace-sidebar"><div className="workspace-logo">₱</div>{nav.map(item => { const Icon = item.icon; return <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><Icon /><span>{item.label}</span></button> })}</aside><div className="workspace-body"><header className="workspace-header"><div><span className="eyebrow">PINOY POCKET BUDGET</span><h1>{pageTitle}</h1></div><div className="header-actions"><button className="refer-button"><Share2 /> <span>Refer a friend</span></button><button className="round-button" onClick={() => setRemindersOpen(true)} aria-label="Due date reminders"><Bell /></button><button className={`avatar-button ${avatarUrl ? 'has-photo' : ''}`} onClick={() => setSettingsOpen(true)} aria-label="Account settings">{avatarUrl ? <img src={avatarUrl} alt="Profile" /> : session.user.email?.slice(0, 1).toUpperCase()}</button></div></header><main className="workspace-main">{loadError && <div className="notice">Could not load all budget data: {loadError}</div>}{page !== 'premium' && launchBanner}
 
   {page === 'overview' && <><section className="funds-grid"><article className="funds-card"><span>Total Available Funds</span><strong>{peso.format(accountTotals.available)}</strong><p>Cash currently available across your accounts</p><small>Protected maintaining balances <b>{peso.format(accountTotals.protected)}</b></small><small>Safe to spend <b>{peso.format(accountTotals.available - accountTotals.protected - accountTotals.savings)}</b></small></article><article className="savings-card"><span>Savings</span><strong>{peso.format(accountTotals.savings)}</strong><p>Current reserved savings</p></article></section><section className="quick-actions"><button onClick={() => { setKind('income'); setSourceKey(accounts[0] ? `account:${accounts[0].id}` : ''); setTransactionOpen(true) }}><ArrowDownCircle /><span><b>Add income</b><small>Money coming in</small></span></button><button onClick={() => { setKind('expense'); setSourceKey(accounts[0] ? `account:${accounts[0].id}` : cards[0] ? `card:${cards[0].id}` : ''); setTransactionOpen(true) }}><ArrowUpCircle /><span><b>Add expense</b><small>Money going out</small></span></button><button onClick={() => setAccountOpen(true)}><Landmark /><span><b>Add account</b><small>Initial funds available</small></span></button><button onClick={() => setDebtForm('loan')}><CreditCard /><span><b>Add loan</b><small>Track a balance</small></span></button></section><aside className="setup-banner"><div><b>Finish setting up Pinoy Pocket Budget</b><span>Continue the guided setup to keep every balance accurate.</span></div><button onClick={() => setTutorialOpen(true)}>Continue tutorial</button></aside><aside className="sync-banner"><ShieldCheck /><div><b>Accounts synchronized</b><span>No broken account links, duplicate schedules, or invalid debt balances detected.</span></div></aside><section className="workspace-card accounts-card"><header><div><span className="eyebrow">AVAILABLE FUNDS</span><h2>Accounts</h2></div><button onClick={() => setAccountOpen(true)}><Plus /> Add account</button></header>{accounts.length ? <div className="account-list">{accounts.map(account => <article key={account.id}><div><b>{account.name}</b><span>{account.provider}</span></div><strong>{peso.format(Number(account.available_balance))}</strong></article>)}</div> : <p>Add your first bank, wallet, or Cash on Hand account to include its balance in Total Available Funds.</p>}</section><section className="workspace-card projection-card"><div><span className="eyebrow">CUSTOM PERIOD</span><h2>Disposable income projection</h2><p>See what may remain after upcoming and recurring expenses, including scheduled loan payments.</p><label>Project through<input type="date" defaultValue={new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10)} /></label></div><aside><span className="eyebrow">PROJECTED DISPOSABLE INCOME</span><strong>{peso.format(accountTotals.available - accountTotals.protected - accountTotals.savings)}</strong><small>Upcoming & recurring expenses <b>−{peso.format(0)}</b></small><button>View included expense details</button></aside></section><section className="overview-columns"><article className="workspace-card"><span className="eyebrow">THIS MONTH</span><h2>Spending by category</h2><div className="workspace-empty">{totals.expense ? `${peso.format(totals.expense)} recorded` : 'No expenses recorded this month.'}</div></article><article className="workspace-card"><span className="eyebrow">DEBT OVERVIEW</span><h2>Loans and cards</h2><div className="debt-summary"><span>Loan overview <b>{peso.format(loans.reduce((sum, item) => sum + Number(item.balance), 0))}</b></span><span>Credit-card overview <b>{peso.format(cards.reduce((sum, item) => sum + Number(item.current_balance), 0))}</b></span></div></article></section><section className="section-heading"><div><span className="eyebrow">MONEY MOVEMENT</span><h2>Recent activity</h2></div></section>{transactionList(tx.slice(0, 4))}<button className="text-link" onClick={() => go('activity')}>View all transactions <ArrowRight /></button></>}
 
@@ -394,7 +402,7 @@ function Dashboard({ session }: { session: Session }) {
   {debtForm && <AddDebtForm session={session} type={debtForm} onClose={() => setDebtForm(null)} onSaved={load} />}
   {accountOpen && <AddAccountForm session={session} onClose={() => setAccountOpen(false)} onSaved={load} />}
   {selectedDebt && <DebtActionForm session={session} debt={selectedDebt.debt} action={selectedDebt.action} onClose={() => setSelectedDebt(null)} onSaved={load} />}
-  {settingsOpen && <AccountSettings session={session} onClose={() => setSettingsOpen(false)} onRestartTutorial={() => setTutorialOpen(true)} />}
+  {settingsOpen && <AccountSettings session={session} onClose={() => setSettingsOpen(false)} onRestartTutorial={() => setTutorialOpen(true)} onAvatarChange={setAvatarUrl} />}
   {tutorialOpen && <GettingStarted onClose={completeTutorial} onFinish={completeTutorial} />}
   {remindersOpen && <div className="modal-backdrop" onMouseDown={() => setRemindersOpen(false)}><section className="modal reminder-modal" onMouseDown={e => e.stopPropagation()}><header><h2>Due date reminders</h2><button className="plain-icon" onClick={() => setRemindersOpen(false)}><X /></button></header><label>Show upcoming dues within<select defaultValue="7"><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option></select></label><div className="workspace-empty">You have no overdue or upcoming payments within the selected reminder period.</div><p>These reminders appear when you open Pinoy Pocket Budget. When email reports are enabled, reports are sent 15 days before a due date and again 3 days after an unpaid due date.</p></section></div>}
   </div>
