@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import { configured, supabase } from './lib/supabase'
 import './debt-actions.css'
 import './settings.css'
+import './responsive.css'
 import { PublicPages } from './PublicPages'
 
 type Kind = 'income' | 'expense'
