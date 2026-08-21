@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { ArrowDownCircle, ArrowUpCircle, CreditCard, LogOut, Plus, ReceiptText, WalletCards } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Bell, CreditCard, HelpCircle, LogOut, Plus, ReceiptText, Settings, ShieldCheck, Trash2, WalletCards, X } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { configured, supabase } from './lib/supabase'
 import './debt-actions.css'
+import './settings.css'
+import { PublicPages } from './PublicPages'
 
 type Kind = 'income' | 'expense'
 type DebtType = 'loan' | 'credit_card'
@@ -33,6 +35,7 @@ function Auth() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [msg, setMsg] = useState('')
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   async function login(e: FormEvent) {
     e.preventDefault()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -42,7 +45,50 @@ function Auth() {
     const { error } = await supabase.auth.signUp({ email, password })
     setMsg(error?.message || 'Check your email to confirm your account.')
   }
-  return <main className="auth"><section className="auth-card"><div className="brand-mark">₱</div><h1>Pinoy Pocket Budget</h1><p>Every peso has a purpose.</p>{!configured && <div className="notice">Add your Supabase anon key to <code>.env</code>.</div>}<form onSubmit={login}><label>Email<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label><label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} minLength={6} required /></label><button className="primary">Sign in</button><button type="button" className="secondary" onClick={signup}>Create account</button></form>{msg && <p className="message">{msg}</p>}</section></main>
+  async function forgotPassword() {
+    if (!email) return setMsg('Enter your email address first.')
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/` })
+    setMsg(error?.message || 'Check your email for a password-reset link.')
+  }
+  return <main className="auth auth-page"><section className="auth-intro"><div className="brand-mark">₱</div><span className="eyebrow">PINOY POCKET BUDGET</span><h1>Ipon, gastos, at utang—organized in one private place.</h1><p>Track your income, daily expenses, and loan progress in Philippine pesos. Your account keeps your budget separate and protected.</p><ul><li>Private account and cloud backup</li><li>Income, expense, and loan tracking</li><li>Built for Filipino households</li></ul></section><section className="auth-card"><span className="eyebrow">{mode === 'signin' ? 'WELCOME BACK' : 'CREATE YOUR ACCOUNT'}</span><h2>{mode === 'signin' ? 'Sign in' : 'Start budgeting'}</h2><p>Use your email to access your private budget.</p>{!configured && <div className="notice">Add your Supabase publishable key to the deployment environment.</div>}<form onSubmit={mode === 'signin' ? login : e => { e.preventDefault(); void signup() }}><label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required /></label><label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" minLength={8} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required /></label><button className="primary">{mode === 'signin' ? 'Sign in' : 'Create free account'}</button></form><div className="auth-switch">{mode === 'signin' ? <><button onClick={forgotPassword}>Forgot password?</button><span>New here? <button onClick={() => { setMode('signup'); setMsg('') }}>Create account</button></span></> : <button onClick={() => { setMode('signin'); setMsg('') }}>← Back to sign in</button>}</div>{msg && <p className="message">{msg}</p>}<small>By continuing, you agree to the <a href="/terms">Terms of Service</a> and acknowledge the <a href="/privacy">Privacy Policy</a>. Need help? <a href="/help">Open the Help Center</a>.</small></section></main>
+}
+
+function AccountSettings({ session, onClose }: { session: Session; onClose(): void }) {
+  const [enabled, setEnabled] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [confirmation, setConfirmation] = useState('')
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    void supabase.from('user_notification_settings').select('due_reports_enabled').eq('user_id', session.user.id).maybeSingle().then(({ data, error }) => {
+      if (error) setMessage(error.message)
+      else setEnabled(data?.due_reports_enabled ?? true)
+      setLoaded(true)
+    })
+  }, [session.user.id])
+
+  async function saveNotifications() {
+    setSaving(true)
+    const { error } = await supabase.from('user_notification_settings').upsert({ user_id: session.user.id, due_reports_enabled: enabled, updated_at: new Date().toISOString() })
+    setSaving(false)
+    setMessage(error?.message || 'Notification settings saved.')
+  }
+
+  async function deleteAccount() {
+    if (confirmation !== 'DELETE') return
+    setSaving(true)
+    setMessage('')
+    const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' })
+    if (error) {
+      setSaving(false)
+      setMessage(error.message)
+      return
+    }
+    await supabase.auth.signOut()
+  }
+
+  return <div className="settings-backdrop" onMouseDown={onClose}><section className="settings-panel" onMouseDown={event => event.stopPropagation()} aria-label="Account settings"><header><div><span className="eyebrow">YOUR ACCOUNT</span><h2>Account settings</h2></div><button className="plain-icon" onClick={onClose} aria-label="Close settings"><X /></button></header><div className="settings-section"><ShieldCheck /><div><h3>Profile & security</h3><p>Signed in as <strong>{session.user.email}</strong></p><button className="secondary settings-button" onClick={() => supabase.auth.signOut()}><LogOut /> Sign out</button></div></div><div className="settings-section"><Bell /><div><h3>Due-date emails</h3><p>Receive automated reports for upcoming and overdue loan and credit-card payments.</p><label className="toggle"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} disabled={!loaded || saving} /><span>{enabled ? 'Email reminders enabled' : 'Email reminders paused'}</span></label><button className="primary settings-button" onClick={saveNotifications} disabled={!loaded || saving}>{saving ? 'Saving…' : 'Save notifications'}</button></div></div><div className="settings-section"><HelpCircle /><div><h3>Help and policies</h3><div className="settings-links"><a href="/help">Help Center</a><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="mailto:support@pinoypocketbudget.app">Contact support</a></div></div></div><div className="settings-section danger"><Trash2 /><div><h3>Danger Zone</h3><p>Permanently delete your account, sign-in access, and associated app records. This cannot be undone.</p><label>Type DELETE to confirm<input value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label><button className="danger-button" disabled={confirmation !== 'DELETE' || saving} onClick={deleteAccount}>Delete account permanently</button></div></div>{message && <p className="message" role="status">{message}</p>}</section></div>
 }
 
 function DebtActionForm({ session, debt, action, onClose, onSaved }: { session: Session; debt: Debt; action: DebtAction; onClose(): void; onSaved(): Promise<void> }) {
@@ -103,6 +149,7 @@ function Dashboard({ session }: { session: Session }) {
   const [category, setCategory] = useState('Food')
   const [note, setNote] = useState('')
   const [loadError, setLoadError] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   async function load() {
     const [t, l, c] = await Promise.all([
@@ -138,10 +185,12 @@ function Dashboard({ session }: { session: Session }) {
     await load()
   }
 
-  return <div className="shell"><header><div><span className="eyebrow">MAGANDANG ARAW</span><h1>My Budget</h1></div><button className="icon" onClick={() => supabase.auth.signOut()} title="Sign out"><LogOut /></button></header><main className="content">{loadError && <div className="notice" role="alert">Could not load all budget data: {loadError}</div>}<section className="balance"><span>Income balance</span><strong>{peso.format(totals.balance)}</strong><small>Income minus expenses</small></section><section className="metrics"><article><ArrowUpCircle /><span>Income</span><strong>{peso.format(totals.income)}</strong></article><article><ArrowDownCircle /><span>Expenses</span><strong>{peso.format(totals.expense)}</strong></article><article><WalletCards /><span>Total debt</span><strong>{peso.format(totals.debt)}</strong></article></section><section className="section-title"><div><span className="eyebrow">RECENT ACTIVITY</span><h2>Transactions</h2></div><button className="primary compact" onClick={() => setOpen(true)}><Plus /> Add</button></section><section className="list">{tx.length ? tx.map(item => <article key={item.id}><div className={`tx-icon ${item.kind}`}>{item.kind === 'income' ? <ArrowUpCircle /> : <ArrowDownCircle />}</div><div><strong>{item.note || item.category}</strong><span>{item.category} · {new Date(`${item.date}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b className={item.kind}>{item.kind === 'income' ? '+' : '−'}{peso.format(Number(item.amount))}</b></article>) : <div className="empty">No transactions yet. Add your first income or expense.</div>}</section><section className="section-title"><div><span className="eyebrow">WHAT YOU OWE</span><h2>Loans & credit cards</h2></div></section><section className="list debt-list">{debts.length ? debts.map(debt => <article key={`${debt.debtType}-${debt.id}`}><div className="tx-icon debt"><CreditCard /></div><div><strong>{debt.name}</strong><span>{debt.provider} · Due {new Date(`${debt.dueDate}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b>{peso.format(debt.balance)}</b><div className="debt-actions"><button className="action payment" onClick={() => setSelectedDebt({ debt, action: 'payment' })}>Pay</button><button className="action" onClick={() => setSelectedDebt({ debt, action: 'adjustment' })}><ReceiptText /> Adjust</button></div></article>) : <div className="empty">Your loan and credit-card overview will appear here.</div>}</section></main>{open && <div className="modal-backdrop" onMouseDown={() => setOpen(false)}><form className="modal" onSubmit={add} onMouseDown={e => e.stopPropagation()}><h2>Add transaction</h2><div className="segmented"><button type="button" className={kind === 'expense' ? 'active' : ''} onClick={() => setKind('expense')}>Expense</button><button type="button" className={kind === 'income' ? 'active' : ''} onClick={() => setKind('income')}>Income</button></div><label>Amount<input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} required /></label><label>Category<select value={category} onChange={e => setCategory(e.target.value)}>{['Food', 'Bills', 'Transport', 'Shopping', 'Salary', 'Freelance', 'Other'].map(item => <option key={item}>{item}</option>)}</select></label><label>Note<textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="Optional" /></label><button className="primary">Save transaction</button><button type="button" className="secondary" onClick={() => setOpen(false)}>Cancel</button></form></div>}{selectedDebt && <DebtActionForm session={session} debt={selectedDebt.debt} action={selectedDebt.action} onClose={() => setSelectedDebt(null)} onSaved={load} />}</div>
+  return <div className="shell"><header><div><span className="eyebrow">MAGANDANG ARAW</span><h1>My Budget</h1></div><button className="icon" onClick={() => setSettingsOpen(true)} title="Account settings"><Settings /></button></header><main className="content">{loadError && <div className="notice" role="alert">Could not load all budget data: {loadError}</div>}<section className="balance"><span>Income balance</span><strong>{peso.format(totals.balance)}</strong><small>Income minus expenses</small></section><section className="metrics"><article><ArrowUpCircle /><span>Income</span><strong>{peso.format(totals.income)}</strong></article><article><ArrowDownCircle /><span>Expenses</span><strong>{peso.format(totals.expense)}</strong></article><article><WalletCards /><span>Total debt</span><strong>{peso.format(totals.debt)}</strong></article></section><section className="section-title"><div><span className="eyebrow">RECENT ACTIVITY</span><h2>Transactions</h2></div><button className="primary compact" onClick={() => setOpen(true)}><Plus /> Add</button></section><section className="list">{tx.length ? tx.map(item => <article key={item.id}><div className={`tx-icon ${item.kind}`}>{item.kind === 'income' ? <ArrowUpCircle /> : <ArrowDownCircle />}</div><div><strong>{item.note || item.category}</strong><span>{item.category} · {new Date(`${item.date}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b className={item.kind}>{item.kind === 'income' ? '+' : '−'}{peso.format(Number(item.amount))}</b></article>) : <div className="empty">No transactions yet. Add your first income or expense.</div>}</section><section className="section-title"><div><span className="eyebrow">WHAT YOU OWE</span><h2>Loans & credit cards</h2></div></section><section className="list debt-list">{debts.length ? debts.map(debt => <article key={`${debt.debtType}-${debt.id}`}><div className="tx-icon debt"><CreditCard /></div><div><strong>{debt.name}</strong><span>{debt.provider} · Due {new Date(`${debt.dueDate}T00:00:00`).toLocaleDateString('en-PH')}</span></div><b>{peso.format(debt.balance)}</b><div className="debt-actions"><button className="action payment" onClick={() => setSelectedDebt({ debt, action: 'payment' })}>Pay</button><button className="action" onClick={() => setSelectedDebt({ debt, action: 'adjustment' })}><ReceiptText /> Adjust</button></div></article>) : <div className="empty">Your loan and credit-card overview will appear here.</div>}</section></main>{open && <div className="modal-backdrop" onMouseDown={() => setOpen(false)}><form className="modal" onSubmit={add} onMouseDown={e => e.stopPropagation()}><h2>Add transaction</h2><div className="segmented"><button type="button" className={kind === 'expense' ? 'active' : ''} onClick={() => setKind('expense')}>Expense</button><button type="button" className={kind === 'income' ? 'active' : ''} onClick={() => setKind('income')}>Income</button></div><label>Amount<input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} required /></label><label>Category<select value={category} onChange={e => setCategory(e.target.value)}>{['Food', 'Bills', 'Transport', 'Shopping', 'Salary', 'Freelance', 'Other'].map(item => <option key={item}>{item}</option>)}</select></label><label>Note<textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="Optional" /></label><button className="primary">Save transaction</button><button type="button" className="secondary" onClick={() => setOpen(false)}>Cancel</button></form></div>}{settingsOpen && <AccountSettings session={session} onClose={() => setSettingsOpen(false)} />}{selectedDebt && <DebtActionForm session={session} debt={selectedDebt.debt} action={selectedDebt.action} onClose={() => setSelectedDebt(null)} onSaved={load} />}</div>
 }
 
 export default function App() {
+  const publicPage = window.location.pathname.slice(1)
+  if (publicPage === 'help' || publicPage === 'privacy' || publicPage === 'terms') return <PublicPages page={publicPage} />
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
   useEffect(() => {
