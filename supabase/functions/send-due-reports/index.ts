@@ -42,7 +42,7 @@ Deno.serve(async request=>{
    const {data:userResult}=await supabase.auth.admin.getUserById(item.user_id)
    const email=userResult.user?.email
    if(!email||!userResult.user?.email_confirmed_at){skipped++;continue}
-   const {data:prior}=await supabase.from('due_report_deliveries').select('id').eq('user_id',item.user_id).eq('debt_id',item.debt_id).eq('due_date',item.due_date).eq('report_type',reportType).maybeSingle()
+   const {data:prior}=await supabase.from('due_report_deliveries').select('id').eq('user_id',item.user_id).eq('debt_type',item.debt_type).eq('debt_id',item.debt_id).eq('due_date',item.due_date).eq('report_type',reportType).maybeSingle()
    if(prior){skipped++;continue}
    if(body.dry_run){sent++;continue}
 
@@ -50,7 +50,7 @@ Deno.serve(async request=>{
    const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{authorization:`Bearer ${resendKey}`,'content-type':'application/json'},body:JSON.stringify({from,to:[email],reply_to:'support@pinoypocketbudget.app',subject:`Pinoy Pocket Budget: ${title}`,html:`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#19362f"><div style="background:#123e34;color:white;padding:24px;border-radius:18px 18px 0 0"><h1 style="margin:0;font-size:24px">Pinoy Pocket Budget</h1></div><div style="padding:24px;border:1px solid #dfe7e3;border-top:0;border-radius:0 0 18px 18px"><h2>${escapeHtml(title)}</h2><p>Your ${escapeHtml(item.debt_type==='credit_card'?'credit card':'loan')} payment has an outstanding balance of <strong>${money(Number(item.amount_due))}</strong>.</p><p><strong>Due date:</strong> ${escapeHtml(item.due_date)}</p><p>Open Pinoy Pocket Budget to review the account or record a payment.</p></div></div>`})})
    if(!response.ok)throw new Error(`Resend failed (${response.status}): ${await response.text()}`)
    const delivery=await response.json()
-   const {error:logError}=await supabase.from('due_report_deliveries').insert({user_id:item.user_id,debt_id:item.debt_id,due_date:item.due_date,report_type:reportType,resend_email_id:delivery.id})
+   const {error:logError}=await supabase.from('due_report_deliveries').insert({user_id:item.user_id,debt_type:item.debt_type,debt_id:item.debt_id,due_date:item.due_date,report_type:reportType,resend_email_id:delivery.id})
    if(logError)throw logError
    sent++
   }
